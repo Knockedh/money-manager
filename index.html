@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Spese</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Spese">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#2f6fed">
+<style>
+:root{--bg:#f5f6f8;--card:#fff;--text:#16181d;--muted:#6b7280;--accent:#2f6fed;--danger:#d93025;--line:#e3e5ea}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1115;--card:#1a1d24;--text:#eceef2;--muted:#9aa1ad;--accent:#6c9bff;--danger:#ff6b60;--line:#2a2e38}}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.4 -apple-system,system-ui,sans-serif;
+  padding:env(safe-area-inset-top) 16px calc(env(safe-area-inset-bottom) + 100px)}
+header{display:flex;align-items:center;justify-content:space-between;padding:12px 0 8px}
+h1{font-size:28px;margin:0}
+button{font:inherit;border:0;border-radius:12px;padding:10px 14px;background:var(--card);color:var(--accent);cursor:pointer}
+button.primary{background:var(--accent);color:#fff;font-weight:600}
+button.danger{color:var(--danger)}
+input,select{width:100%;font:inherit;color:var(--text);background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px}
+.month{display:flex;align-items:center;justify-content:space-between;margin:4px 0 12px}
+.month b{font-size:18px;text-transform:capitalize}
+.total{background:var(--card);border-radius:16px;padding:16px;margin-bottom:12px}
+.total .big{font-size:34px;font-weight:700}
+.total .sub{color:var(--muted);font-size:14px}
+.cat{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:14px}
+.cat .name{width:84px;flex:none}
+.cat .bar{flex:1;height:8px;background:var(--line);border-radius:4px;overflow:hidden}
+.cat .bar i{display:block;height:100%;background:var(--accent)}
+.cat .val{width:84px;text-align:right;flex:none}
+.day{color:var(--muted);font-size:13px;margin:16px 4px 6px;text-transform:uppercase;letter-spacing:.04em}
+.item{background:var(--card);border-radius:14px;padding:12px 14px;margin-bottom:8px;display:flex;justify-content:space-between;gap:12px;cursor:pointer}
+.item .l span{display:block;color:var(--muted);font-size:13px}
+.item .amt{font-weight:600;white-space:nowrap}
+.empty{color:var(--muted);text-align:center;margin-top:40px}
+.fab{position:fixed;right:20px;bottom:calc(env(safe-area-inset-bottom) + 20px);width:60px;height:60px;border-radius:30px;font-size:32px;padding:0;box-shadow:0 4px 14px rgba(0,0,0,.25)}
+.tools{display:flex;gap:8px;margin-top:24px}
+.tools button{flex:1;font-size:14px;padding:10px 6px}
+.banner{background:var(--card);border-left:4px solid var(--danger);border-radius:10px;padding:10px 12px;margin:8px 0;font-size:14px}
+#editor{display:none}
+.field{margin-bottom:12px}
+.field label{display:block;color:var(--muted);font-size:13px;margin-bottom:4px}
+#amount{font-size:32px;font-weight:700;text-align:center}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chips button{background:var(--card);color:var(--text);border:1px solid var(--line)}
+.chips button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.row{display:flex;gap:8px;margin-top:16px}
+.row>*{flex:1}
+</style>
+</head>
+<body>
+<div id="list">
+  <header><h1>Spese</h1></header>
+  <div id="backup" class="banner" hidden></div>
+  <div class="month">
+    <button id="prev" aria-label="Mese precedente">‹</button>
+    <b id="mlabel"></b>
+    <button id="next" aria-label="Mese successivo">›</button>
+  </div>
+  <div class="total">
+    <div class="sub">Totale del mese</div>
+    <div class="big" id="total"></div>
+    <div id="cats"></div>
+  </div>
+  <div id="items"></div>
+  <div class="tools">
+    <button id="exp-json">⬆︎ Backup</button>
+    <button id="exp-csv">⬆︎ CSV</button>
+    <button id="imp">⬇︎ Importa</button>
+  </div>
+  <input id="file" type="file" accept="application/json,.json" hidden>
+  <button class="primary fab" id="new" aria-label="Nuova spesa">+</button>
+</div>
+
+<div id="editor">
+  <header><h1 id="etitle">Nuova spesa</h1></header>
+  <div class="field"><input id="amount" inputmode="decimal" placeholder="0,00 €" autocomplete="off"></div>
+  <div class="field"><label>Categoria</label><div class="chips" id="chips"></div></div>
+  <div class="field"><label>Data</label><input id="date" type="date"></div>
+  <div class="field"><label>Nota (facoltativa)</label><input id="note" placeholder="Es. Spesa al supermercato"></div>
+  <div class="row">
+    <button id="cancel">Annulla</button>
+    <button id="del" class="danger">Elimina</button>
+    <button id="save" class="primary">Salva</button>
+  </div>
+</div>
+
+<script>
+const CATS = ['Cibo','Casa','Trasporti','Salute','Svago','Shopping','Bollette','Altro'];
+const DB_NAME = 'spese-offline', STORE = 'expenses';
+let db, view = new Date(), editing = null, cat = CATS[0];
+const $ = id => document.getElementById(id);
+const eur = c => (c / 100).toLocaleString('it-IT', { style: 'currency', currency: 'EUR' });
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+const pad = n => String(n).padStart(2, '0');
+const dstr = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const meta = {
+  get: k => { try { return localStorage.getItem(k); } catch { return null; } },
+  set: (k, v) => { try { localStorage.setItem(k, v); } catch {} }
+};
+
+function openDB() {
+  return new Promise((ok, ko) => {
+    const r = indexedDB.open(DB_NAME, 1);
+    r.onupgradeneeded = () => r.result.createObjectStore(STORE, { keyPath: 'id' });
+    r.onsuccess = () => ok(r.result);
+    r.onerror = () => ko(r.error);
+  });
+}
+const tx = (mode, fn) => new Promise((ok, ko) => {
+  const t = db.transaction(STORE, mode), res = fn(t.objectStore(STORE));
+  t.oncomplete = () => ok(res && res.result);
+  t.onerror = () => ko(t.error);
+});
+const getAll = () => tx('readonly', s => s.getAll());
+const put = x => tx('readwrite', s => s.put(x));
+const remove = id => tx('readwrite', s => s.delete(id));
+
+function parseAmount(s) {
+  s = String(s).trim().replace(/[€\s]/g, '');
+  if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');
+  const n = Number(s);
+  return Number.isFinite(n) && n > 0 ? Math.round(n * 100) : null;
+}
+
+async function render() {
+  const ym = `${view.getFullYear()}-${pad(view.getMonth() + 1)}`;
+  $('mlabel').textContent = view.toLocaleString('it-IT', { month: 'long', year: 'numeric' });
+  const all = await getAll();
+  const rows = all.filter(e => e.date.startsWith(ym)).sort((a, b) => b.date.localeCompare(a.date) || b.updated - a.updated);
+  const sum = rows.reduce((t, e) => t + e.amount, 0);
+  $('total').textContent = eur(sum);
+
+  const by = {};
+  rows.forEach(e => by[e.category] = (by[e.category] || 0) + e.amount);
+  $('cats').innerHTML = Object.entries(by).sort((a, b) => b[1] - a[1]).map(([c, v]) => `
+    <div class="cat"><span class="name">${esc(c)}</span>
+    <span class="bar"><i style="width:${(v / sum * 100).toFixed(1)}%"></i></span>
+    <span class="val">${eur(v)}</span></div>`).join('');
+
+  let html = '', last = '';
+  for (const e of rows) {
+    if (e.date !== last) {
+      last = e.date;
+      const d = new Date(e.date + 'T12:00:00');
+      html += `<div class="day">${d.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' })}</div>`;
+    }
+    html += `<div class="item" data-id="${esc(e.id)}"><div class="l"><b>${esc(e.category)}</b>${e.note ? `<span>${esc(e.note)}</span>` : ''}</div><div class="amt">${eur(e.amount)}</div></div>`;
+  }
+  $('items').innerHTML = html || '<div class="empty">Nessuna spesa in questo mese.<br>Tocca + per aggiungerne una.</div>';
+  updateBanner(all.length);
+}
+
+function updateBanner(count) {
+  const last = +meta.get('lastBackup') || 0, days = (Date.now() - last) / 864e5, b = $('backup');
+  if (!count) { b.hidden = true; return; }
+  b.hidden = false;
+  if (!last) b.textContent = 'Nessun backup ancora. Tocca "Backup" e salvalo su iCloud Drive.';
+  else if (days > 7) b.textContent = `Ultimo backup ${Math.floor(days)} giorni fa. Esportane uno nuovo.`;
+  else b.hidden = true;
+}
+
+function show(edit) {
+  $('list').style.display = edit ? 'none' : '';
+  $('editor').style.display = edit ? 'block' : 'none';
+  window.scrollTo(0, 0);
+}
+
+function setCat(c) {
+  cat = c;
+  $('chips').innerHTML = CATS.map(x => `<button type="button" class="${x === c ? 'on' : ''}" data-c="${x}">${x}</button>`).join('');
+}
+$('chips').onclick = e => { const b = e.target.closest('button'); if (b) setCat(b.dataset.c); };
+
+function openEditor(x) {
+  editing = x;
+  $('etitle').textContent = x ? 'Modifica spesa' : 'Nuova spesa';
+  $('amount').value = x ? (x.amount / 100).toFixed(2).replace('.', ',') : '';
+  $('date').value = x ? x.date : dstr(new Date());
+  $('note').value = x ? x.note : '';
+  $('del').style.display = x ? '' : 'none';
+  setCat(x ? x.category : CATS[0]);
+  show(true);
+  if (!x) $('amount').focus();
+}
+
+$('new').onclick = () => openEditor(null);
+$('cancel').onclick = () => { editing = null; show(false); };
+$('save').onclick = async () => {
+  const amount = parseAmount($('amount').value);
+  if (!amount) { alert('Inserisci un importo valido, ad esempio 12,50'); return; }
+  if (!$('date').value) { alert('Inserisci una data'); return; }
+  const rec = { id: editing ? editing.id : crypto.randomUUID(), amount, category: cat,
+    date: $('date').value, note: $('note').value.trim(), updated: Date.now() };
+  await put(rec);
+  const [y, m] = rec.date.split('-').map(Number);
+  view = new Date(y, m - 1, 1);
+  editing = null; show(false); render();
+};
+$('del').onclick = async () => {
+  if (!confirm('Eliminare questa spesa?')) return;
+  await remove(editing.id); editing = null; show(false); render();
+};
+$('items').onclick = async e => {
+  const el = e.target.closest('.item'); if (!el) return;
+  const x = (await getAll()).find(r => r.id === el.dataset.id); if (x) openEditor(x);
+};
+$('prev').onclick = () => { view = new Date(view.getFullYear(), view.getMonth() - 1, 1); render(); };
+$('next').onclick = () => { view = new Date(view.getFullYear(), view.getMonth() + 1, 1); render(); };
+
+async function shareFile(file, isBackup) {
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: file.name });
+    } else {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(file); a.download = file.name; a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    }
+    if (isBackup) { meta.set('lastBackup', Date.now()); render(); }
+  } catch (err) {
+    if (err.name !== 'AbortError') alert('Esportazione non riuscita: ' + err.message);
+  }
+}
+const today = () => dstr(new Date());
+
+$('exp-json').onclick = async () => {
+  const data = JSON.stringify({ app: 'spese-offline', version: 1, exported: Date.now(), expenses: await getAll() }, null, 2);
+  shareFile(new File([data], `spese-backup-${today()}.json`, { type: 'application/json' }), true);
+};
+$('exp-csv').onclick = async () => {
+  const q = s => `"${String(s).replace(/"/g, '""')}"`;
+  const rows = (await getAll()).sort((a, b) => a.date.localeCompare(b.date))
+    .map(e => [e.date, q(e.category), (e.amount / 100).toFixed(2).replace('.', ','), q(e.note)].join(';'));
+  const csv = '﻿' + ['Data;Categoria;Importo;Nota', ...rows].join('\r\n');
+  shareFile(new File([csv], `spese-${today()}.csv`, { type: 'text/csv' }), false);
+};
+
+$('imp').onclick = () => $('file').click();
+$('file').onchange = async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  try {
+    const d = JSON.parse(await f.text());
+    if (!Array.isArray(d.expenses)) throw new Error('file non valido');
+    const have = new Map((await getAll()).map(x => [x.id, x]));
+    let n = 0;
+    for (const x of d.expenses) {
+      const ok = x && typeof x.id === 'string' && Number.isInteger(x.amount) && x.amount > 0 &&
+        /^\d{4}-\d{2}-\d{2}$/.test(x.date) && typeof x.updated === 'number';
+      if (!ok) continue;
+      const old = have.get(x.id);
+      if (!old || old.updated < x.updated) {
+        await put({ id: x.id, amount: x.amount, category: String(x.category || 'Altro'), date: x.date, note: String(x.note || ''), updated: x.updated });
+        n++;
+      }
+    }
+    alert(`Importate/aggiornate ${n} spese.`); render();
+  } catch (err) { alert('Importazione non riuscita: ' + err.message); }
+};
+
+(async () => {
+  db = await openDB();
+  view = new Date(view.getFullYear(), view.getMonth(), 1);
+  if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+  render();
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+})();
+</script>
+</body>
+</html>
