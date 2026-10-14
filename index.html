@@ -41,6 +41,12 @@ input.search{color:var(--text)}
 .summary div{background:var(--card);border-radius:14px;padding:10px 12px}
 .summary small{display:block;color:var(--muted);font-size:12px}
 .summary b{font-size:15px}
+.acc .bal{font-size:20px;font-weight:700;color:var(--text);margin:2px 0}
+.acc .bal.neg{color:var(--neg)}
+.acc .unset{color:var(--muted);font-size:14px;margin:4px 0}
+.big{font-size:38px;font-weight:700;margin:4px 0}
+.hrow{display:flex;justify-content:space-between;align-items:baseline}
+.hrow small{color:var(--muted);font-size:14px;font-weight:400}
 .neg{color:var(--neg)} .pos{color:var(--pos)}
 .accounts{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .acc{background:var(--card2);border-radius:14px;padding:10px 12px;text-align:left;color:var(--text)}
@@ -129,7 +135,7 @@ input.search{color:var(--text)}
   <div id="backup" class="banner" hidden></div>
   <div class="month"><button data-mnav="-1" aria-label="Mese precedente">‹</button><b class="m-label"></b><button data-mnav="1" aria-label="Mese successivo">›</button></div>
   <div class="summary" id="h-summary"></div>
-  <div class="card"><h2>Conti</h2><div class="accounts" id="h-accounts"></div></div>
+  <div class="card"><h2 class="hrow">Conti <small id="h-acc-total"></small></h2><div class="accounts" id="h-accounts"></div></div>
   <div class="card">
     <h2>Spese principali</h2>
     <div class="lbl m-label"></div>
@@ -185,6 +191,25 @@ input.search{color:var(--text)}
   </div>
   <p class="sub" id="e-rec-info" hidden></p>
   <div class="row"><button id="e-del" class="danger">Elimina</button><button id="e-save" class="primary">Salva</button></div>
+</section>
+
+<section class="view" id="v-account">
+  <header class="top"><button class="icon back" aria-label="Indietro">‹</button><h1 id="a-title"></h1></header>
+  <div class="card">
+    <div class="lbl">Saldo attuale</div>
+    <div class="big" id="a-bal"></div>
+    <p class="sub" id="a-info" style="margin:0"></p>
+  </div>
+  <div class="card">
+    <h2>Regola saldo</h2>
+    <p class="sub" style="margin:0 0 10px">Scrivi quanto hai adesso su questo conto. Da questo momento le spese lo fanno scendere e le entrate salire.</p>
+    <div class="subrow"><input id="a-input" inputmode="decimal" placeholder="Es. 176,00" autocomplete="off"><button class="primary" id="a-save">Imposta</button></div>
+  </div>
+  <div class="card">
+    <h2>Movimenti dall'ultimo saldo</h2>
+    <div id="a-list"></div>
+    <button class="more" id="a-all">Tutte le registrazioni del conto</button>
+  </div>
 </section>
 
 <section class="view" id="v-settings">
@@ -376,7 +401,7 @@ const recLabel = r => r.recur ? ` · 🔁${r.recur.of ? ` ${r.recur.n}/${r.recur
 const RENDER = {};
 function show(v) {
   $$('.view').forEach(x => x.classList.toggle('on', x.id === 'v-' + v));
-  $('fab').hidden = !['home', 'chart', 'records'].includes(v);
+  $('fab').hidden = !['home', 'chart', 'records', 'account'].includes(v);
   $$('.m-label').forEach(x => x.textContent = monthName(ym(month)));
   RENDER[v]();
   window.scrollTo(0, 0);
@@ -409,12 +434,17 @@ RENDER.home = () => {
   $('h-summary').innerHTML = `
     <div><small>Uscite</small><b class="neg">${neg(out)}</b></div>
     <div><small>Entrate</small><b class="pos">${eur(inn)}</b></div>
-    <div><small>Saldo</small><b>${eur(inn - out)}</b></div>`;
+    <div><small>Netto del mese</small><b>${eur(inn - out)}</b></div>`;
+
+  const set = accounts.filter(a => a.base);
+  $('h-acc-total').textContent = set.length ? 'Totale ' + eur(set.reduce((t, a) => t + balanceOf(a), 0)) : '';
 
   $('h-accounts').innerHTML = accounts.map(a => {
     const o = sum(exp.filter(r => r.account === a.id)), i = sum(inc.filter(r => r.account === a.id));
+    const bal = balanceOf(a);
     return `<button class="acc" data-acc="${esc(a.id)}"><b><i style="background:${a.color}"></i>${esc(a.name)}</b>
-      <span class="neg">${neg(o)}</span>${i ? `<span class="pos">+${eur(i)}</span>` : ''}</button>`;
+      ${bal == null ? '<div class="unset">Tocca per impostare il saldo</div>' : `<div class="bal ${bal < 0 ? 'neg' : ''}">${eur(bal)}</div>`}
+      ${o ? `<span class="neg">${neg(o)} questo mese</span>` : ''}${i ? `<span class="pos">+${eur(i)}</span>` : ''}</button>`;
   }).join('');
 
   const top = groupSum(exp, r => r.cat).slice(0, 3), max = top.length ? top[0][1] : 1;
@@ -435,7 +465,49 @@ RENDER.home = () => {
   b.hidden = !records.length || (last && days <= 7);
   b.textContent = last ? `Ultimo backup ${Math.floor(days)} giorni fa. Esportane uno nuovo da ⚙︎.` : 'Nessun backup ancora. Vai in ⚙︎ → Backup e salvalo su iCloud Drive.';
 };
-$('h-accounts').onclick = e => { const b = e.target.closest('[data-acc]'); if (b) openRecords({ account: b.dataset.acc, month: ym(month) }); };
+$('h-accounts').onclick = e => { const b = e.target.closest('[data-acc]'); if (b) { accSel = b.dataset.acc; $('a-input').value = ''; go('account'); } };
+
+// ---------- Saldo conti ----------
+// Il saldo impostato vale come punto di partenza a quel minuto: contano solo i movimenti con data/ora successive
+// (a parità di minuto, quelli inseriti dopo). I movimenti precedenti sono già compresi nella cifra impostata.
+const recMin = r => `${r.date}T${r.time}`;
+const signed = r => r.type === 'income' ? r.amount : -r.amount;
+const afterBase = (r, base) => recMin(r) > base.at || (recMin(r) === base.at && r.created > base.ts);
+const accRecsSinceBase = a => records.filter(r => r.account === a.id && afterBase(r, a.base));
+const balanceOf = a => a.base ? a.base.amount + accRecsSinceBase(a).reduce((t, r) => t + signed(r), 0) : null;
+const saveAccounts = () => tx(META, 'readwrite', st => st.put({ key: 'accounts', value: accounts }));
+let accSel = null;
+
+RENDER.account = () => {
+  const a = accOf(accSel), bal = balanceOf(a);
+  $('a-title').textContent = a.name;
+  $('a-bal').textContent = bal == null ? '—' : eur(bal);
+  $('a-bal').className = 'big' + (bal < 0 ? ' neg' : '');
+  $('a-info').textContent = a.base
+    ? `Impostato a ${eur(a.base.amount)} il ${new Date(a.base.ts).toLocaleString('it-IT', { dateStyle: 'medium', timeStyle: 'short' })}`
+    : 'Saldo non ancora impostato.';
+  const list = a.base ? accRecsSinceBase(a).sort((x, y) => recMin(y).localeCompare(recMin(x)) || y.created - x.created) : [];
+  $('a-list').innerHTML = list.length ? list.map(r => recRow(r, shortDate(r.date))).join('')
+    : `<div class="empty">${a.base ? 'Nessun movimento dopo l\'ultimo saldo.' : 'Imposta il saldo per iniziare.'}</div>`;
+};
+function parseBalance(v) {
+  v = String(v).trim().replace(/[€\s]/g, '');
+  if (!v) return null;
+  if (v.includes(',')) v = v.replace(/\./g, '').replace(',', '.');
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.round(n * 100) : null;
+}
+$('a-save').onclick = async () => {
+  const amount = parseBalance($('a-input').value);
+  if (amount == null) return alert('Inserisci una cifra valida, ad esempio 176,00');
+  const a = accounts.find(x => x.id === accSel); if (!a) return;
+  const now = new Date();
+  a.base = { amount, at: `${dstr(now)}T${tstr(now)}`, ts: now.getTime() };
+  await saveAccounts();
+  $('a-input').value = ''; $('a-input').blur();
+  RENDER.account();
+};
+$('a-all').onclick = () => openRecords({ account: accSel });
 $('h-top').onclick = e => { const b = e.target.closest('[data-cat]'); if (b) { chartSel = b.dataset.cat; go('chart'); } };
 $('h-top-more').onclick = () => { chartSel = null; go('chart'); };
 $('h-latest-more').onclick = () => openRecords({});
@@ -541,7 +613,7 @@ $('r-chips').onclick = e => { const b = e.target.closest('[data-k]'); if (b) { d
 // ---------- Editor registrazione ----------
 function openEditor(r) {
   const now = new Date();
-  ed = r ? clone(r) : { id: null, type: 'expense', account: meta.get('lastAccount') || 'contanti', cat: '', sub: '', date: dstr(now), time: tstr(now), note: '' };
+  ed = r ? clone(r) : { id: null, type: 'expense', account: nav[nav.length - 1] === 'account' ? accSel : (meta.get('lastAccount') || 'contanti'), cat: '', sub: '', date: dstr(now), time: tstr(now), note: '' };
   ed.rec = { on: false, freq: 'monthly', count: 3 };
   $('e-title').textContent = r ? 'Modifica' : 'Nuova registrazione';
   $('e-amount').value = r ? (r.amount / 100).toFixed(2).replace('.', ',') : '';
@@ -734,6 +806,14 @@ $('file').onchange = async e => {
     const d = JSON.parse(await f.text());
     const incoming = Array.isArray(d.records) ? d.records : Array.isArray(d.expenses) ? d.expenses.map(migrateV1) : null;
     if (!incoming) throw new Error('file non valido');
+    if (Array.isArray(d.accounts)) {
+      for (const x of d.accounts) {
+        const b = x && x.base, a = accounts.find(y => x && y.id === x.id);
+        const ok = a && b && Number.isInteger(b.amount) && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(b.at) && typeof b.ts === 'number';
+        if (ok && (!a.base || a.base.ts < b.ts)) a.base = { amount: b.amount, at: b.at, ts: b.ts };
+      }
+      await saveAccounts();
+    }
     if (Array.isArray(d.categories)) {
       for (const c of d.categories.filter(validCat)) {
         const clean = { id: c.id, name: c.name, color: c.color, icon: String(c.icon || '📁').slice(0, 4), kind: c.kind, subs: c.subs.map(x => ({ id: x.id, name: x.name })) };
