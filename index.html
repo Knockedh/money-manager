@@ -93,7 +93,7 @@ input.search{color:var(--text)}
 .field>label{display:block;color:var(--muted);font-size:13px;margin-bottom:6px}
 #e-amount{font-size:34px;font-weight:700;text-align:center}
 .seg{display:flex;background:var(--card2);border-radius:12px;padding:3px;margin-bottom:14px}
-.seg button{flex:1;background:none;color:var(--text);padding:8px}
+.seg button{flex:1;background:none;color:var(--text);padding:8px 4px;font-size:15px}
 .seg button.on{background:var(--card);font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.2)}
 .row{display:flex;gap:8px;margin-top:16px}
 .row>*{flex:1}
@@ -174,10 +174,11 @@ input.search{color:var(--text)}
 
 <section class="view" id="v-edit">
   <header class="top"><button class="icon back" aria-label="Annulla">‹</button><h1 id="e-title">Nuova</h1></header>
-  <div class="seg" id="e-type"><button data-t="expense">Spesa</button><button data-t="income">Entrata</button></div>
+  <div class="seg" id="e-type"><button data-t="expense">Spesa</button><button data-t="income">Entrata</button><button data-t="transfer">Trasferimento</button></div>
   <div class="field"><input id="e-amount" inputmode="decimal" placeholder="0,00 €" autocomplete="off"></div>
-  <div class="field"><label>Conto</label><div class="chips" id="e-acc"></div></div>
-  <div class="field"><label>Categoria</label><div class="chips" id="e-cat"></div></div>
+  <div class="field"><label id="e-acc-l">Conto</label><div class="chips" id="e-acc"></div></div>
+  <div class="field" id="e-to-f"><label>A conto</label><div class="chips" id="e-to"></div></div>
+  <div class="field" id="e-cat-f"><label>Categoria</label><div class="chips" id="e-cat"></div></div>
   <div class="field" id="e-sub-f"><label>Sottocategoria</label><div class="chips" id="e-sub"></div></div>
   <div class="field two"><div style="flex:2"><label class="lbl">Data</label><input id="e-date" type="date"></div><div style="flex:1"><label class="lbl">Ora</label><input id="e-time" type="time"></div></div>
   <div class="field"><label>Nota</label><input id="e-note" placeholder="Es. Colazione con Zhou" autocomplete="off"></div>
@@ -292,6 +293,10 @@ const monthName = key => { const [y, m] = key.split('-').map(Number); return new
 const eur = c => (c / 100).toLocaleString('it-IT', { style: 'currency', currency: 'EUR' });
 const neg = c => eur(c ? -c : 0);
 const money = r => (r.type === 'expense' ? '-' : '') + eur(r.amount);
+const TRANSFER = { name: 'Trasferimento', color: '#8e8e93', icon: '⇄' };
+const isT = r => r.type === 'transfer';
+const amtClass = r => r.type === 'income' ? 'pos' : r.type === 'expense' ? 'neg' : '';
+const accLine = r => isT(r) ? `${accOf(r.account).name} → ${accOf(r.to).name}` : accOf(r.account).name;
 const sum = list => list.reduce((t, r) => t + r.amount, 0);
 const norm = v => String(v).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 const meta = {
@@ -303,7 +308,7 @@ const FALLBACK_CAT = { id: '', name: 'Senza categoria', color: '#a1a1aa', icon: 
 const catOf = id => cats.find(c => c.id === id) || FALLBACK_CAT;
 const accOf = id => accounts.find(a => a.id === id) || { id, name: id || '—', color: '#a1a1aa' };
 const subName = r => { const x = catOf(r.cat).subs.find(z => z.id === r.sub); return x ? x.name : ''; };
-const recTitle = r => { const c = catOf(r.cat), sn = subName(r); return sn ? `${c.name} / ${sn}` : c.name; };
+const recTitle = r => { if (isT(r)) return TRANSFER.name; const c = catOf(r.cat), sn = subName(r); return sn ? `${c.name} / ${sn}` : c.name; };
 function groupSum(list, key) {
   const m = new Map();
   list.forEach(r => m.set(key(r), (m.get(key(r)) || 0) + r.amount));
@@ -389,7 +394,7 @@ async function runRecurring() {
   for (const rc of recurring) {
     while (!finished(rc) && nextDate(rc) <= t) {
       const now = Date.now();
-      await putRec({ id: uid(), type: rc.type, amount: rc.amount, account: rc.account, cat: rc.cat, sub: rc.sub,
+      await putRec({ id: uid(), type: rc.type, amount: rc.amount, account: rc.account, cat: rc.cat, sub: rc.sub, ...(rc.to ? { to: rc.to } : {}),
         date: nextDate(rc), time: rc.time, note: rc.note, created: now, updated: now, recur: { id: rc.id, n: rc.done + 1, of: rc.total } });
       rc.done++; changed = true;
     }
@@ -422,12 +427,15 @@ document.addEventListener('click', e => {
   if (r) { const x = records.find(z => z.id === r.dataset.id); if (x) openEditor(x); }
 });
 
-function recRow(r, right) {
-  const c = catOf(r.cat), a = accOf(r.account);
+function recRow(r, right, accId) {
+  const c = isT(r) ? TRANSFER : catOf(r.cat);
+  // Dentro la schermata di un conto il trasferimento mostra il segno rispetto a quel conto
+  const tSign = isT(r) && accId ? (r.to === accId ? '+' : '-') : '';
+  const cls = tSign ? (tSign === '+' ? 'pos' : 'neg') : amtClass(r);
   return `<div class="rec" data-id="${esc(r.id)}">
     <div class="ico" style="background:${isHex(c.color) ? c.color : '#a1a1aa'}">${esc(c.icon)}</div>
-    <div class="mid"><b>${esc(recTitle(r))}</b><span>${esc(a.name + recLabel(r))}</span>${r.note ? `<span class="note">${esc(r.note)}</span>` : ''}</div>
-    <div class="end"><b class="${r.type === 'income' ? 'pos' : 'neg'}">${money(r)}</b><span>${esc(right)}</span></div>
+    <div class="mid"><b>${esc(recTitle(r))}</b><span>${esc(accLine(r) + recLabel(r))}</span>${r.note ? `<span class="note">${esc(r.note)}</span>` : ''}</div>
+    <div class="end"><b class="${cls}">${tSign}${money(r)}</b><span>${esc(right)}</span></div>
   </div>`;
 }
 const shortDate = d => new Date(d + 'T12:00:00').toLocaleDateString('it-IT', { day: 'numeric', month: 'long' });
@@ -475,10 +483,11 @@ $('h-accounts').onclick = e => { const b = e.target.closest('[data-acc]'); if (b
 // Il saldo impostato vale come punto di partenza a quel minuto: contano solo i movimenti con data/ora successive
 // (a parità di minuto, quelli inseriti dopo). I movimenti precedenti sono già compresi nella cifra impostata.
 const recMin = r => `${r.date}T${r.time}`;
-const signed = r => r.type === 'income' ? r.amount : -r.amount;
+const signedFor = (r, id) => isT(r) ? (r.to === id ? r.amount : -r.amount) : r.type === 'income' ? r.amount : -r.amount;
 const afterBase = (r, base) => recMin(r) > base.at || (recMin(r) === base.at && r.created > base.ts);
-const accRecsSinceBase = a => records.filter(r => r.account === a.id && afterBase(r, a.base));
-const balanceOf = a => a.base ? a.base.amount + accRecsSinceBase(a).reduce((t, r) => t + signed(r), 0) : null;
+const touches = (r, id) => r.account === id || (isT(r) && r.to === id);
+const accRecsSinceBase = a => records.filter(r => touches(r, a.id) && afterBase(r, a.base));
+const balanceOf = a => a.base ? a.base.amount + accRecsSinceBase(a).reduce((t, r) => t + signedFor(r, a.id), 0) : null;
 const saveAccounts = () => tx(META, 'readwrite', st => st.put({ key: 'accounts', value: accounts }));
 let accSel = null;
 
@@ -491,7 +500,7 @@ RENDER.account = () => {
     ? `Impostato a ${eur(a.base.amount)} il ${new Date(a.base.ts).toLocaleString('it-IT', { dateStyle: 'medium', timeStyle: 'short' })}`
     : 'Saldo non ancora impostato.';
   const list = a.base ? accRecsSinceBase(a).sort((x, y) => recMin(y).localeCompare(recMin(x)) || y.created - x.created) : [];
-  $('a-list').innerHTML = list.length ? list.map(r => recRow(r, shortDate(r.date))).join('')
+  $('a-list').innerHTML = list.length ? list.map(r => recRow(r, shortDate(r.date), a.id)).join('')
     : `<div class="empty">${a.base ? 'Nessun movimento dopo l\'ultimo saldo.' : 'Imposta il saldo per iniziare.'}</div>`;
 };
 function parseBalance(v) {
@@ -519,11 +528,11 @@ $('h-search').onclick = () => { openRecords({}); $('r-q').focus(); };
 $('go-settings').onclick = () => go('settings');
 $('h-rec-more').onclick = () => { go('settings'); $('recurring').scrollIntoView(); };
 function recLine(rc, withStop) {
-  const c = catOf(rc.cat), sn = (c.subs.find(z => z.id === rc.sub) || {}).name;
+  const c = isT(rc) ? TRANSFER : catOf(rc.cat), sn = isT(rc) ? accLine(rc) : (c.subs.find(z => z.id === rc.sub) || {}).name;
   const left = rc.total == null ? 'senza scadenza' : `ancora ${rc.total - rc.done} di ${rc.total}`;
   return `<div class="recline"><div class="ico" style="background:${c.color}">${esc(c.icon)}</div>
     <div class="mid"><b>${esc(sn || c.name)}</b>${rc.note ? `<span>${esc(rc.note)}</span>` : ''}<span>${freqOf(rc.freq).name} · ${left}</span><span>Prossimo: ${esc(shortDate(nextDate(rc)))}</span></div>
-    <div class="end" style="text-align:right"><b class="${rc.type === 'income' ? 'pos' : 'neg'}">${money(rc)}</b>
+    <div class="end" style="text-align:right"><b class="${amtClass(rc)}">${money(rc)}</b>
     ${withStop ? `<button class="danger" data-stop="${esc(rc.id)}" style="padding:6px 0;background:none;font-size:14px">Interrompi</button>` : ''}</div></div>`;
 }
 
@@ -586,8 +595,8 @@ RENDER.records = () => {
   const list = records.filter(r =>
     (!rf.month || r.date.startsWith(rf.month)) &&
     (!rf.cat || r.cat === rf.cat) &&
-    (!rf.account || r.account === rf.account) &&
-    (!tokens.length || (h => tokens.every(t => h.includes(t)))(norm([r.note, catOf(r.cat).name, subName(r), accOf(r.account).name].join(' '))))
+    (!rf.account || touches(r, rf.account)) &&
+    (!tokens.length || (h => tokens.every(t => h.includes(t)))(norm([r.note, recTitle(r), accLine(r)].join(' '))))
   ).sort((a, b) => b.date.localeCompare(a.date) || b.time.localeCompare(a.time) || b.created - a.created);
 
   const chips = [];
@@ -630,10 +639,16 @@ function openEditor(r) {
 }
 RENDER.edit = () => {
   $$('#e-type button').forEach(b => b.classList.toggle('on', b.dataset.t === ed.type));
-  $('e-acc').innerHTML = accounts.map(a => `<button class="${a.id === ed.account ? 'on' : ''}" data-v="${esc(a.id)}"><i style="background:${a.color}"></i>${esc(a.name)}</button>`).join('');
+  const accChips = sel => accounts.map(a => `<button class="${a.id === sel ? 'on' : ''}" data-v="${esc(a.id)}"><i style="background:${a.color}"></i>${esc(a.name)}</button>`).join('');
+  const t = isT(ed);
+  $('e-acc-l').textContent = t ? 'Da conto' : 'Conto';
+  $('e-acc').innerHTML = accChips(ed.account);
+  $('e-to-f').hidden = !t;
+  $('e-to').innerHTML = accChips(ed.to);
+  $('e-cat-f').hidden = t;
   $('e-cat').innerHTML = cats.filter(c => c.kind === ed.type).map(c => `<button class="${c.id === ed.cat ? 'on' : ''}" data-v="${esc(c.id)}"><i style="background:${c.color}"></i>${esc(c.name)}</button>`).join('');
   const c = cats.find(x => x.id === ed.cat);
-  $('e-sub-f').hidden = !c || !c.subs.length;
+  $('e-sub-f').hidden = t || !c || !c.subs.length;
   $('e-sub').innerHTML = c ? c.subs.map(x => `<button class="${x.id === ed.sub ? 'on' : ''}" data-v="${esc(x.id)}">${esc(x.name)}</button>`).join('') : '';
 
   // La ricorrenza si imposta solo su una registrazione nuova
@@ -664,9 +679,11 @@ $('e-type').onclick = e => {
   const b = e.target.closest('[data-t]'); if (!b) return;
   ed.type = b.dataset.t;
   if (catOf(ed.cat).kind !== ed.type) { ed.cat = ''; ed.sub = ''; }
+  if (ed.type === 'transfer' && (!ed.to || ed.to === ed.account)) ed.to = (accounts.find(a => a.id !== ed.account) || {}).id;
   RENDER.edit();
 };
 $('e-acc').onclick = e => { const b = e.target.closest('[data-v]'); if (b) { ed.account = b.dataset.v; RENDER.edit(); } };
+$('e-to').onclick = e => { const b = e.target.closest('[data-v]'); if (b) { ed.to = b.dataset.v; RENDER.edit(); } };
 $('e-cat').onclick = e => { const b = e.target.closest('[data-v]'); if (b && b.dataset.v !== ed.cat) { ed.cat = b.dataset.v; ed.sub = ''; RENDER.edit(); } };
 $('e-sub').onclick = e => { const b = e.target.closest('[data-v]'); if (b) { ed.sub = ed.sub === b.dataset.v ? '' : b.dataset.v; RENDER.edit(); } };
 
@@ -679,17 +696,19 @@ function parseAmount(v) {
 $('e-save').onclick = async () => {
   const amount = parseAmount($('e-amount').value);
   if (!amount) return alert('Inserisci un importo valido, ad esempio 12,50');
-  if (!ed.cat) return alert('Scegli una categoria');
+  const t = isT(ed);
+  if (t && (!ed.to || ed.to === ed.account)) return alert('Scegli due conti diversi');
+  if (!t && !ed.cat) return alert('Scegli una categoria');
   if (!$('e-date').value) return alert('Inserisci una data');
   const now = Date.now(), isNew = !ed.id;
-  const rec = { id: ed.id || uid(), type: ed.type, amount, account: ed.account, cat: ed.cat, sub: ed.sub,
+  const rec = { id: ed.id || uid(), type: ed.type, amount, account: ed.account, cat: t ? '' : ed.cat, sub: t ? '' : ed.sub, ...(t ? { to: ed.to } : {}),
     date: $('e-date').value, time: $('e-time').value || '12:00', note: $('e-note').value.trim(),
     created: ed.created || now, updated: now };
   if (ed.recur) rec.recur = ed.recur;
   if (isNew && ed.rec.on) {
     const total = ed.rec.count === 'inf' ? null : ed.rec.count + 1;
     rec.recur = { id: uid(), n: 1, of: total };
-    recurring.push({ id: rec.recur.id, type: rec.type, amount: rec.amount, account: rec.account, cat: rec.cat, sub: rec.sub,
+    recurring.push({ id: rec.recur.id, type: rec.type, amount: rec.amount, account: rec.account, cat: rec.cat, sub: rec.sub, ...(t ? { to: rec.to } : {}),
       note: rec.note, time: rec.time, freq: ed.rec.freq, start: rec.date, total, done: 1 });
   }
   await putRec(rec);
@@ -792,13 +811,13 @@ $('exp-json').onclick = () => {
 $('exp-csv').onclick = () => {
   const q = v => `"${String(v).replace(/"/g, '""')}"`;
   const rows = [...records].sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time)).map(r => [
-    r.date, r.time, r.type === 'income' ? 'Entrata' : 'Spesa', q(accOf(r.account).name), q(catOf(r.cat).name), q(subName(r)),
-    ((r.type === 'expense' ? -r.amount : r.amount) / 100).toFixed(2).replace('.', ','), q(r.note)].join(';'));
+    r.date, r.time, { income: 'Entrata', expense: 'Spesa', transfer: 'Trasferimento' }[r.type], q(accLine(r)), q(isT(r) ? '' : catOf(r.cat).name), q(isT(r) ? '' : subName(r)),
+    ((r.type === 'expense' || isT(r) ? -r.amount : r.amount) / 100).toFixed(2).replace('.', ','), q(r.note)].join(';'));
   const csv = '﻿' + ['Data;Ora;Tipo;Conto;Categoria;Sottocategoria;Importo;Nota', ...rows].join('\r\n');
   shareFile(new File([csv], `spese-${today()}.csv`, { type: 'text/csv' }), false);
 };
 
-const validRec = r => r && typeof r.id === 'string' && ['expense', 'income'].includes(r.type) && Number.isInteger(r.amount) && r.amount > 0 &&
+const validRec = r => r && typeof r.id === 'string' && ['expense', 'income', 'transfer'].includes(r.type) && (r.type !== 'transfer' || typeof r.to === 'string') && Number.isInteger(r.amount) && r.amount > 0 &&
   /^\d{4}-\d{2}-\d{2}$/.test(r.date) && typeof r.updated === 'number';
 const validCat = c => c && typeof c.id === 'string' && typeof c.name === 'string' && isHex(c.color) && ['expense', 'income'].includes(c.kind) &&
   Array.isArray(c.subs) && c.subs.every(x => x && typeof x.id === 'string' && typeof x.name === 'string');
@@ -830,7 +849,7 @@ $('file').onchange = async e => {
     for (const r of incoming.filter(validRec)) {
       const old = records.find(x => x.id === r.id);
       if (!old || old.updated < r.updated) {
-        await putRec({ id: r.id, type: r.type, amount: r.amount, account: String(r.account || 'contanti'), cat: String(r.cat || 'altro'), sub: String(r.sub || ''),
+        await putRec({ id: r.id, type: r.type, amount: r.amount, account: String(r.account || 'contanti'), ...(r.type === 'transfer' ? { cat: '', sub: '', to: r.to } : { cat: String(r.cat || 'altro'), sub: String(r.sub || '') }),
           date: r.date, time: /^\d{2}:\d{2}$/.test(r.time) ? r.time : '12:00', note: String(r.note || ''), created: Number(r.created) || r.updated, updated: r.updated,
           ...(r.recur && typeof r.recur.id === 'string' ? { recur: { id: r.recur.id, n: Number(r.recur.n) || 1, of: r.recur.of == null ? null : Number(r.recur.of) } } : {}) });
         n++;
@@ -841,7 +860,7 @@ $('file').onchange = async e => {
         const ok = rc && typeof rc.id === 'string' && Number.isInteger(rc.amount) && rc.amount > 0 && /^\d{4}-\d{2}-\d{2}$/.test(rc.start) &&
           FREQS.some(f => f.id === rc.freq) && Number.isInteger(rc.done) && (rc.total == null || Number.isInteger(rc.total));
         if (!ok) continue;
-        const clean = { id: rc.id, type: rc.type === 'income' ? 'income' : 'expense', amount: rc.amount, account: String(rc.account || 'contanti'), cat: String(rc.cat || 'altro'),
+        const clean = { id: rc.id, ...(rc.type === 'transfer' && typeof rc.to === 'string' ? { type: 'transfer', to: rc.to } : { type: rc.type === 'income' ? 'income' : 'expense' }), amount: rc.amount, account: String(rc.account || 'contanti'), cat: String(rc.cat || 'altro'),
           sub: String(rc.sub || ''), note: String(rc.note || ''), time: /^\d{2}:\d{2}$/.test(rc.time) ? rc.time : '12:00', freq: rc.freq, start: rc.start, total: rc.total == null ? null : rc.total, done: rc.done };
         const i = recurring.findIndex(x => x.id === rc.id);
         if (i < 0) recurring.push(clean); else if (recurring[i].done < clean.done) recurring[i] = clean;
