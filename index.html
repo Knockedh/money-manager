@@ -260,9 +260,9 @@ const FREQS = [
   { id: 'yearly', name: 'Annuale', months: 12 }
 ];
 const CATS_DEFAULT = [
-  { id: 'cibo', name: 'Cibo e bevande', color: '#e5533d', icon: '🍽️', kind: 'expense', subs: [s('supermercato', 'Spesa supermercato'), s('ristorante', 'Ristorante'), s('bar', 'Bar e colazione'), s('asporto', "Cibo d'asporto")] },
+  { id: 'cibo', name: 'Cibo e bevande', color: '#e5533d', icon: '🍽️', kind: 'expense', subs: [s('supermercato', 'Spesa supermercato'), s('ristorante', 'Uscite: mangiare'), s('bar', 'Uscite: bere'), s('asporto', "Cibo d'asporto")] },
   { id: 'shopping', name: 'Shopping', color: '#6fc0f2', icon: '🛍️', kind: 'expense', subs: [s('abbigliamento', 'Abbigliamento e scarpe'), s('elettronica', 'Elettronica'), s('regali', 'Regali'), s('cura', 'Cura personale')] },
-  { id: 'trasporti', name: 'Trasporti e viaggi', color: '#7d8e9b', icon: '🚌', kind: 'expense', subs: [s('mezzi', 'Mezzi pubblici'), s('carburante', 'Carburante'), s('parcheggio', 'Parcheggio e pedaggi'), s('viaggi', 'Viaggi')] },
+  { id: 'trasporti', name: 'Trasporti e viaggi', color: '#7d8e9b', icon: '🚌', kind: 'expense', subs: [s('mezzi', 'Mezzi pubblici'), s('carburante', 'Carburante'), s('parcheggio', 'Parcheggio e pedaggi'), s('viaggi', 'Viaggi'), s('viaggi-sicilia', 'Spese viaggi Sicilia')] },
   { id: 'casa', name: 'Casa', color: '#c9925a', icon: '🏠', kind: 'expense', subs: [s('affitto', 'Affitto'), s('bollette', 'Bollette'), s('arredo', 'Arredo e manutenzione')] },
   { id: 'salute', name: 'Salute e sport', color: '#e57ab0', icon: '💊', kind: 'expense', subs: [s('farmacia', 'Farmacia'), s('visite', 'Visite mediche'), s('palestra', 'Palestra e sport')] },
   { id: 'svago', name: 'Svago', color: '#9b6ee0', icon: '🎉', kind: 'expense', subs: [s('uscite', 'Uscite'), s('eventi', 'Eventi e concerti'), s('hobby', 'Hobby')] },
@@ -371,6 +371,17 @@ async function load() {
   const missing = ACCOUNTS_DEFAULT.filter(d => !accounts.some(x => x.id === d.id));
   if (missing.length) { accounts.push(...clone(missing)); await tx(META, 'readwrite', st => st.put({ key: 'accounts', value: accounts })); }
   if (!cats.some(x => x.id === 'abbonamenti')) { cats.splice(Math.max(0, cats.findIndex(x => x.id === 'finanza')), 0, clone(ABBONAMENTI)); await saveCats(); }
+  // Correzioni alle categorie già salvate sul dispositivo (una sola volta; non tocca le voci rinominate a mano)
+  const patch = await tx(META, 'readonly', st => st.get('catsPatch'));
+  if (!patch || patch.value < 1) {
+    const cibo = cats.find(x => x.id === 'cibo'), tr = cats.find(x => x.id === 'trasporti');
+    const rename = (c, id, from, to) => { const x = c && c.subs.find(z => z.id === id); if (x && x.name === from) x.name = to; };
+    rename(cibo, 'ristorante', 'Ristorante', 'Uscite: mangiare');
+    rename(cibo, 'bar', 'Bar e colazione', 'Uscite: bere');
+    if (tr && !tr.subs.some(z => z.id === 'viaggi-sicilia')) tr.subs.push(s('viaggi-sicilia', 'Spese viaggi Sicilia'));
+    await saveCats();
+    await tx(META, 'readwrite', st => st.put({ key: 'catsPatch', value: 1 }));
+  }
   const rc = await tx(META, 'readonly', st => st.get('recurring'));
   recurring = rc ? rc.value : [];
 }
