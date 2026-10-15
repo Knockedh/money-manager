@@ -245,7 +245,8 @@ const ACCOUNTS_DEFAULT = [
   { id: 'intesa', name: 'Intesa', color: '#2fae66' },
   { id: 'traderepublic', name: 'TradeRepublic', color: '#8e8e93' },
   { id: 'contanti', name: 'Contanti', color: '#f2a33a' },
-  { id: 'paypal', name: 'PayPal', color: '#2f6fed' }
+  { id: 'paypal', name: 'PayPal', color: '#2f6fed' },
+  { id: 'investimenti', name: 'Investimenti', color: '#9b6ee0' }
 ];
 const s = (id, name) => ({ id, name });
 const ABBONAMENTI = { id: 'abbonamenti', name: 'Abbonamenti', color: '#f2a33a', icon: '🔁', kind: 'expense', subs: [s('streaming', 'Streaming video'), s('musica', 'Musica'), s('software', 'App e software'), s('telefono', 'Telefono e internet'), s('palestra-abb', 'Palestra'), s('altri-abb', 'Altri abbonamenti')] };
@@ -361,6 +362,9 @@ async function load() {
   accounts = a ? a.value : clone(ACCOUNTS_DEFAULT);
   if (!c) await saveCats();
   if (!a) await tx(META, 'readwrite', st => st.put({ key: 'accounts', value: accounts }));
+  // Aggiunge ai dati già salvati i conti introdotti nelle versioni successive
+  const missing = ACCOUNTS_DEFAULT.filter(d => !accounts.some(x => x.id === d.id));
+  if (missing.length) { accounts.push(...clone(missing)); await tx(META, 'readwrite', st => st.put({ key: 'accounts', value: accounts })); }
   if (!cats.some(x => x.id === 'abbonamenti')) { cats.splice(Math.max(0, cats.findIndex(x => x.id === 'finanza')), 0, clone(ABBONAMENTI)); await saveCats(); }
   const rc = await tx(META, 'readonly', st => st.get('recurring'));
   recurring = rc ? rc.value : [];
