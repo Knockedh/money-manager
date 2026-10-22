@@ -49,6 +49,7 @@ input.search{color:var(--text)}
 .hrow small{color:var(--muted);font-size:14px;font-weight:400}
 .neg{color:var(--neg)} .pos{color:var(--pos)}
 .accounts{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.acc-more{grid-column:1/-1;background:none;font-weight:600;padding:8px 0 0}
 .acc{background:var(--card2);border-radius:14px;padding:10px 12px;text-align:left;color:var(--text)}
 .acc b{display:block;font-size:15px}
 .acc span{display:block;font-size:13px}
@@ -216,6 +217,7 @@ input.search{color:var(--text)}
 <section class="view" id="v-settings">
   <header class="top"><button class="icon back" aria-label="Indietro">‹</button><h1>Impostazioni</h1></header>
   <div class="card" id="recurring"><h2>Pagamenti ricorrenti</h2><div id="s-rec"></div></div>
+  <div class="card"><h2>Conti in home</h2><p class="sub" style="margin:0 0 10px">Scegli fino a 4 conti da vedere subito. Gli altri restano sotto "Altri conti".</p><div class="chips" id="s-home"></div></div>
   <div class="card"><h2>Categorie di spesa</h2><div id="s-exp"></div></div>
   <div class="card"><h2>Categorie di entrata</h2><div id="s-inc"></div></div>
   <button class="primary" id="s-newcat" style="width:100%;margin-bottom:14px">+ Nuova categoria</button>
@@ -247,7 +249,9 @@ const ACCOUNTS_DEFAULT = [
   { id: 'traderepublic', name: 'TradeRepublic', color: '#8e8e93' },
   { id: 'contanti', name: 'Contanti', color: '#f2a33a' },
   { id: 'paypal', name: 'PayPal', color: '#2f6fed' },
-  { id: 'investimenti', name: 'Investimenti', color: '#9b6ee0' }
+  { id: 'investimenti', name: 'Investimenti', color: '#9b6ee0' },
+  { id: 'revolut', name: 'Revolut', color: '#14b8c4' },
+  { id: 'satispay', name: 'Satispay', color: '#e8423f' }
 ];
 const s = (id, name) => ({ id, name });
 const ABBONAMENTI = { id: 'abbonamenti', name: 'Abbonamenti', color: '#f2a33a', icon: '🔁', kind: 'expense', subs: [s('streaming', 'Streaming video'), s('musica', 'Musica'), s('software', 'App e software'), s('telefono', 'Telefono e internet'), s('palestra-abb', 'Palestra'), s('altri-abb', 'Altri abbonamenti')] };
@@ -462,13 +466,16 @@ RENDER.home = () => {
   const set = accounts.filter(a => a.base);
   $('h-acc-total').textContent = set.length ? 'Totale ' + eur(set.reduce((t, a) => t + balanceOf(a), 0)) : '';
 
-  $('h-accounts').innerHTML = accounts.map(a => {
+  // In home solo i conti in evidenza (max 4); gli altri dietro "Altri conti"
+  const shown = homeAccounts(), rest = accounts.filter(a => !shown.includes(a)), open = meta.get('accMore') === '1';
+  const list = open ? [...shown, ...rest] : shown;
+  $('h-accounts').innerHTML = list.map(a => {
     const o = sum(exp.filter(r => r.account === a.id)), i = sum(inc.filter(r => r.account === a.id));
     const bal = balanceOf(a);
     return `<button class="acc" data-acc="${esc(a.id)}"><b><i style="background:${a.color}"></i>${esc(a.name)}</b>
       ${bal == null ? '<div class="unset">Tocca per impostare il saldo</div>' : `<div class="bal ${bal < 0 ? 'neg' : ''}">${eur(bal)}</div>`}
       ${o ? `<span class="neg">${neg(o)} questo mese</span>` : ''}${i ? `<span class="pos">+${eur(i)}</span>` : ''}</button>`;
-  }).join('');
+  }).join('') + (rest.length ? `<button class="acc-more" id="h-acc-more">${open ? 'Mostra meno ▴' : `Altri conti (${rest.length}) ▾`}</button>` : '');
 
   const top = groupSum(exp, r => r.cat).slice(0, 3), max = top.length ? top[0][1] : 1;
   $('h-top').innerHTML = top.length ? top.map(([id, v]) => {
@@ -488,6 +495,10 @@ RENDER.home = () => {
   b.hidden = !records.length || (last && days <= 7);
   b.textContent = last ? `Ultimo backup ${Math.floor(days)} giorni fa. Esportane uno nuovo da ⚙︎.` : 'Nessun backup ancora. Vai in ⚙︎ → Backup e salvalo su iCloud Drive.';
 };
+const homeAccounts = () => { const m = accounts.filter(a => a.home); return m.length ? m : accounts.slice(0, 4); };
+$('h-accounts').addEventListener('click', e => {
+  if (e.target.closest('#h-acc-more')) { meta.set('accMore', meta.get('accMore') === '1' ? '0' : '1'); RENDER.home(); }
+});
 $('h-accounts').onclick = e => { const b = e.target.closest('[data-acc]'); if (b) { accSel = b.dataset.acc; $('a-input').value = ''; go('account'); } };
 
 // ---------- Saldo conti ----------
@@ -736,6 +747,8 @@ $('fab').onclick = () => openEditor(null);
 
 // ---------- Impostazioni e categorie ----------
 RENDER.settings = () => {
+  const shown = homeAccounts();
+  $('s-home').innerHTML = accounts.map(a => `<button class="${shown.includes(a) ? 'on' : ''}" data-v="${esc(a.id)}"><i style="background:${a.color}"></i>${esc(a.name)}</button>`).join('');
   $('s-rec').innerHTML = recurring.length
     ? [...recurring].sort((a, b) => nextDate(a).localeCompare(nextDate(b))).map(rc => recLine(rc, true)).join('')
     : '<div class="empty">Nessun pagamento ricorrente.<br>Attivalo quando inserisci una nuova spesa.</div>';
@@ -756,6 +769,14 @@ const openCat = id => {
 };
 $('s-exp').onclick = $('s-inc').onclick = e => { const b = e.target.closest('[data-cat]'); if (b) openCat(b.dataset.cat); };
 $('s-newcat').onclick = () => openCat(null);
+$('s-home').onclick = async e => {
+  const b = e.target.closest('[data-v]'); if (!b) return;
+  const ids = new Set(homeAccounts().map(a => a.id)), id = b.dataset.v;
+  if (ids.has(id)) { if (ids.size === 1) return alert('Lascia almeno un conto in home'); ids.delete(id); }
+  else { if (ids.size >= 4) return alert('Puoi tenere al massimo 4 conti in home. Togline prima uno.'); ids.add(id); }
+  accounts.forEach(a => a.home = ids.has(a.id));
+  await saveAccounts(); RENDER.settings();
+};
 $('s-rec').onclick = async e => {
   const b = e.target.closest('[data-stop]'); if (!b) return;
   if (!confirm('Interrompere questo pagamento ricorrente? Le registrazioni già inserite restano.')) return;
@@ -845,6 +866,7 @@ $('file').onchange = async e => {
         const b = x && x.base, a = accounts.find(y => x && y.id === x.id);
         const ok = a && b && Number.isInteger(b.amount) && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(b.at) && typeof b.ts === 'number';
         if (ok && (!a.base || a.base.ts < b.ts)) a.base = { amount: b.amount, at: b.at, ts: b.ts };
+        if (a && typeof x.home === 'boolean') a.home = x.home;
       }
       await saveAccounts();
     }
