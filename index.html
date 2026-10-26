@@ -143,15 +143,15 @@ input.search{color:var(--text)}
     <div id="h-top"></div>
     <button class="more" id="h-top-more">Mostra di più</button>
   </div>
-  <div class="card" id="h-rec-card" hidden>
-    <h2>Prossimi pagamenti ricorrenti</h2>
-    <div id="h-rec"></div>
-    <button class="more" id="h-rec-more">Gestisci</button>
-  </div>
   <div class="card">
     <h2>Ultimi record</h2>
     <div id="h-latest"></div>
     <button class="more" id="h-latest-more">Mostra di più</button>
+  </div>
+  <div class="card" id="h-rec-card" hidden>
+    <h2>Prossimi pagamenti ricorrenti</h2>
+    <div id="h-rec"></div>
+    <button class="more" id="h-rec-more">Gestisci</button>
   </div>
 </section>
 
@@ -676,7 +676,7 @@ RENDER.edit = () => {
   $('e-sub').innerHTML = c ? c.subs.map(x => `<button class="${x.id === ed.sub ? 'on' : ''}" data-v="${esc(x.id)}">${esc(x.name)}</button>`).join('') : '';
 
   // La ricorrenza si imposta solo su una registrazione nuova
-  $('e-rec-f').hidden = !!ed.id;
+  $('e-rec-f').hidden = !!ed.recur; // già parte di una serie: nessun nuovo toggle
   $('e-rec-info').hidden = !ed.recur;
   if (ed.recur) {
     const active = recurring.some(x => x.id === ed.recur.id);
@@ -691,9 +691,15 @@ RENDER.edit = () => {
 function updateRecSummary() {
   if (!ed || !ed.rec.on) return;
   const date = $('e-date').value || dstr(new Date()), nx = shortDate(addPeriod(date, ed.rec.freq, 1));
-  $('e-rec-sum').textContent = ed.rec.count === 'inf'
+  let txt = ed.rec.count === 'inf'
     ? `Si ripete ${freqOf(ed.rec.freq).name.toLowerCase()} senza scadenza. Prossimo: ${nx}.`
     : `Totale ${ed.rec.count + 1} pagamenti: questo + ${ed.rec.count}. Prossimo: ${nx}, ultimo: ${shortDate(addPeriod(date, ed.rec.freq, ed.rec.count))}.`;
+  // Se la data è nel passato, i pagamenti già scaduti vengono inseriti subito
+  const t = dstr(new Date()), max = ed.rec.count === 'inf' ? 600 : ed.rec.count;
+  let due = 0;
+  while (due < max && addPeriod(date, ed.rec.freq, due + 1) <= t) due++;
+  if (due) txt += ` ⚠️ ${due === 1 ? 'Verrà inserito subito 1 pagamento già scaduto' : `Verranno inseriti subito ${due} pagamenti già scaduti`}.`;
+  $('e-rec-sum').textContent = txt;
 }
 $('e-rec-t').onclick = () => { ed.rec.on = !ed.rec.on; RENDER.edit(); };
 $('e-rec-freq').onclick = e => { const b = e.target.closest('[data-v]'); if (b) { ed.rec.freq = b.dataset.v; RENDER.edit(); } };
@@ -729,14 +735,15 @@ $('e-save').onclick = async () => {
     date: $('e-date').value, time: $('e-time').value || '12:00', note: $('e-note').value.trim(),
     created: ed.created || now, updated: now };
   if (ed.recur) rec.recur = ed.recur;
-  if (isNew && ed.rec.on) {
+  const newSeries = !ed.recur && ed.rec.on;
+  if (newSeries) {
     const total = ed.rec.count === 'inf' ? null : ed.rec.count + 1;
     rec.recur = { id: uid(), n: 1, of: total };
     recurring.push({ id: rec.recur.id, type: rec.type, amount: rec.amount, account: rec.account, cat: rec.cat, sub: rec.sub, ...(t ? { to: rec.to } : {}),
       note: rec.note, time: rec.time, freq: ed.rec.freq, start: rec.date, total, done: 1 });
   }
   await putRec(rec);
-  if (rec.recur && isNew) { await saveRecurring(); await runRecurring(); }
+  if (newSeries) { await saveRecurring(); await runRecurring(); }
   meta.set('lastAccount', rec.account);
   if (isNew) { const [y, m] = rec.date.split('-').map(Number); month = new Date(y, m - 1, 1); }
   back();
