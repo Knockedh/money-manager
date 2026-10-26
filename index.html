@@ -90,6 +90,8 @@ input.search{color:var(--text)}
 .chips button i{display:inline-block;width:10px;height:10px;border-radius:5px;margin-right:6px}
 #r-chips{margin-bottom:8px}
 .sub{color:var(--muted);font-size:14px;margin:4px 4px 0}
+.fine{color:var(--muted);font-size:12px;line-height:1.4;text-align:center;margin:10px 0 0}
+.fine b{color:var(--text);font-weight:600}
 .field{margin-bottom:14px}
 .field>label{display:block;color:var(--muted);font-size:13px;margin-bottom:6px}
 #e-amount{font-size:34px;font-weight:700;text-align:center}
@@ -160,6 +162,7 @@ input.search{color:var(--text)}
   <div class="month"><button data-mnav="-1" aria-label="Mese precedente">‹</button><b class="m-label"></b><button data-mnav="1" aria-label="Mese successivo">›</button></div>
   <div class="card">
     <div class="donut-wrap"><svg id="donut" viewBox="0 0 240 240"></svg><button class="center" id="c-center"></button></div>
+    <p class="fine" id="c-note" hidden></p>
   </div>
   <div class="card" id="c-detail" hidden></div>
   <div class="card"><div id="c-legend"></div></div>
@@ -218,6 +221,11 @@ input.search{color:var(--text)}
   <header class="top"><button class="icon back" aria-label="Indietro">‹</button><h1>Impostazioni</h1></header>
   <div class="card" id="recurring"><h2>Pagamenti ricorrenti</h2><div id="s-rec"></div></div>
   <div class="card"><h2>Conti in home</h2><p class="sub" style="margin:0 0 10px">Scegli fino a 4 conti da vedere subito. Gli altri restano sotto "Altri conti".</p><div class="chips" id="s-home"></div></div>
+  <div class="card"><h2>Rimborso mensile fisso</h2>
+    <p class="sub" style="margin:0 0 10px">Una cifra che ti viene restituita ogni mese (per esempio la quota Spotify). Nel grafico compare come nota con il totale al netto. Lascia l'importo vuoto per disattivarla.</p>
+    <div class="field"><label class="lbl">Descrizione</label><input id="s-off-label" placeholder="Es. Spotify ricevuti indietro" autocomplete="off"></div>
+    <div class="subrow"><input id="s-off-amt" inputmode="decimal" placeholder="Importo, es. 18,50" autocomplete="off"><button class="primary" id="s-off-save">Salva</button></div>
+  </div>
   <div class="card"><h2>Categorie di spesa</h2><div id="s-exp"></div></div>
   <div class="card"><h2>Categorie di entrata</h2><div id="s-inc"></div></div>
   <button class="primary" id="s-newcat" style="width:100%;margin-bottom:14px">+ Nuova categoria</button>
@@ -281,7 +289,7 @@ const CATS_DEFAULT = [
 const V1_MAP = { Cibo: ['cibo', ''], Casa: ['casa', ''], Trasporti: ['trasporti', ''], Salute: ['salute', ''], Svago: ['svago', ''], Shopping: ['shopping', ''], Bollette: ['casa', 'bollette'], Altro: ['altro', ''] };
 const PALETTE = ['#e5533d', '#f2a33a', '#f2c94c', '#2fae66', '#56bda8', '#6fc0f2', '#2f6fed', '#5b6cf0', '#9b6ee0', '#e57ab0', '#c9925a', '#7d8e9b', '#a1a1aa'];
 
-let db, records = [], cats = [], accounts = [], recurring = [];
+let db, records = [], cats = [], accounts = [], recurring = [], offset = { label: '', amount: 0, ts: 0 };
 let month, chartSel = null, rf = {}, ed = null, cd = null;
 const nav = ['home'];
 
@@ -390,7 +398,11 @@ async function load() {
   }
   const rc = await tx(META, 'readonly', st => st.get('recurring'));
   recurring = rc ? rc.value : [];
+  const of = await tx(META, 'readonly', st => st.get('offset'));
+  if (of) offset = of.value;
+  else { offset = { label: 'Spotify ricevuti indietro', amount: 1850, ts: Date.now() }; await saveOffset(); }
 }
+const saveOffset = () => tx(META, 'readwrite', st => st.put({ key: 'offset', value: offset }));
 const saveRecurring = () => tx(META, 'readwrite', st => st.put({ key: 'recurring', value: recurring }));
 
 // ---------- Pagamenti ricorrenti ----------
@@ -585,6 +597,10 @@ RENDER.chart = () => {
     ? `<span>${esc(catOf(chartSel).name)}</span><b>${eur(selV)}</b><small>${Math.round(selV / total * 100)}%</small>`
     : `<span>Tutti</span><b>${eur(total)}</b>`;
 
+  const note = $('c-note');
+  note.hidden = !(total > 0 && offset.amount > 0);
+  if (!note.hidden) note.innerHTML = `Di cui ${eur(offset.amount)}${offset.label ? ' ' + esc(offset.label) : ' ricevuti indietro'}<br>Totale al netto: <b>${eur(Math.max(0, total - offset.amount))}</b>`;
+
   $('c-legend').innerHTML = data.length ? data.map(([id, v]) => `
     <button class="leg ${id === chartSel ? 'sel' : ''}" data-cat="${esc(id)}"><i style="background:${catOf(id).color}"></i>
       <span class="n">${esc(catOf(id).name)}</span><span>${eur(v)}</span><span class="p">${Math.round(v / total * 100)}%</span></button>`).join('')
@@ -756,6 +772,8 @@ $('fab').onclick = () => openEditor(null);
 
 // ---------- Impostazioni e categorie ----------
 RENDER.settings = () => {
+  $('s-off-label').value = offset.label;
+  $('s-off-amt').value = offset.amount ? (offset.amount / 100).toFixed(2).replace('.', ',') : '';
   const shown = homeAccounts();
   $('s-home').innerHTML = accounts.map(a => `<button class="${shown.includes(a) ? 'on' : ''}" data-v="${esc(a.id)}"><i style="background:${a.color}"></i>${esc(a.name)}</button>`).join('');
   $('s-rec').innerHTML = recurring.length
@@ -778,6 +796,13 @@ const openCat = id => {
 };
 $('s-exp').onclick = $('s-inc').onclick = e => { const b = e.target.closest('[data-cat]'); if (b) openCat(b.dataset.cat); };
 $('s-newcat').onclick = () => openCat(null);
+$('s-off-save').onclick = async () => {
+  const raw = $('s-off-amt').value.trim(), amount = raw ? parseAmount(raw) : 0;
+  if (raw && !amount) return alert('Inserisci un importo valido, ad esempio 18,50');
+  offset = { label: $('s-off-label').value.trim(), amount: amount || 0, ts: Date.now() };
+  await saveOffset(); RENDER.settings();
+  alert(amount ? 'Salvato.' : 'Rimborso mensile disattivato.');
+};
 $('s-home').onclick = async e => {
   const b = e.target.closest('[data-v]'); if (!b) return;
   const ids = new Set(homeAccounts().map(a => a.id)), id = b.dataset.v;
@@ -846,7 +871,7 @@ async function shareFile(file, isBackup) {
   }
 }
 $('exp-json').onclick = () => {
-  const data = JSON.stringify({ app: 'spese-offline', version: 3, exported: Date.now(), records, categories: cats, accounts, recurring }, null, 2);
+  const data = JSON.stringify({ app: 'spese-offline', version: 4, exported: Date.now(), records, categories: cats, accounts, recurring, offset }, null, 2);
   shareFile(new File([data], `spese-backup-${today()}.json`, { type: 'application/json' }), true);
 };
 $('exp-csv').onclick = () => {
@@ -896,6 +921,10 @@ $('file').onchange = async e => {
           ...(r.recur && typeof r.recur.id === 'string' ? { recur: { id: r.recur.id, n: Number(r.recur.n) || 1, of: r.recur.of == null ? null : Number(r.recur.of) } } : {}) });
         n++;
       }
+    }
+    if (d.offset && Number.isInteger(d.offset.amount) && d.offset.amount >= 0 && typeof d.offset.ts === 'number' && d.offset.ts > offset.ts) {
+      offset = { label: String(d.offset.label || '').slice(0, 60), amount: d.offset.amount, ts: d.offset.ts };
+      await saveOffset();
     }
     if (Array.isArray(d.recurring)) {
       for (const rc of d.recurring) {
