@@ -490,7 +490,7 @@ RENDER.home = () => {
   $('h-rec-card').hidden = !upcoming.length;
   $('h-rec').innerHTML = upcoming.map(rc => recLine(rc, false)).join('');
 
-  const latest = [...records].sort((a, b) => b.created - a.created).slice(0, 3);
+  const latest = [...records].sort((a, b) => b.date.localeCompare(a.date) || b.time.localeCompare(a.time) || b.created - a.created).slice(0, 3);
   $('h-latest').innerHTML = latest.length ? latest.map(r => recRow(r, shortDate(r.date))).join('') : '<div class="empty">Ancora nessuna registrazione.<br>Tocca + per aggiungerne una.</div>';
 
   const last = +meta.get('lastBackup') || 0, days = (Date.now() - last) / 864e5, b = $('backup');
