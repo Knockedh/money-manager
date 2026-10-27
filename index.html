@@ -614,10 +614,12 @@ RENDER.chart = () => {
     det.innerHTML = `<h2>${esc(c.icon)} ${esc(c.name)}</h2>` +
       subs.map(([sid, v]) => {
         const n = (c.subs.find(z => z.id === sid) || {}).name || 'Senza sottocategoria';
-        return `<div class="leg"><i style="background:${c.color};opacity:.6"></i><span class="n">${esc(n)}</span><span>${eur(v)}</span><span class="p">${Math.round(v / selV * 100)}%</span></div>`;
+        const cnt = list.filter(r => r.sub === sid).length;
+        return `<button class="leg" data-sub="${esc(sid)}"><i style="background:${c.color};opacity:.6"></i><span class="n">${esc(n)}<br><small style="color:var(--muted)">${cnt} ${cnt === 1 ? 'pagamento' : 'pagamenti'}</small></span><span>${eur(v)}</span><span class="p">${Math.round(v / selV * 100)}%</span><span style="color:var(--muted);margin-left:2px">›</span></button>`;
       }).join('') +
       `<button class="primary" id="c-show" style="width:100%;margin-top:12px">Mostra le spese di questa categoria (${list.length})</button>`;
     $('c-show').onclick = () => openRecords({ cat: chartSel, month: ym(month) });
+    det.onclick = e => { const b = e.target.closest('[data-sub]'); if (b) openRecords({ cat: chartSel, sub: b.dataset.sub, month: ym(month) }); };
   }
 };
 const pickSeg = e => {
@@ -635,6 +637,7 @@ RENDER.records = () => {
   const list = records.filter(r =>
     (!rf.month || r.date.startsWith(rf.month)) &&
     (!rf.cat || r.cat === rf.cat) &&
+    (rf.sub === undefined || r.sub === rf.sub) &&
     (!rf.account || touches(r, rf.account)) &&
     (!tokens.length || (h => tokens.every(t => h.includes(t)))(norm([r.note, recTitle(r), accLine(r)].join(' '))))
   ).sort((a, b) => b.date.localeCompare(a.date) || b.time.localeCompare(a.time) || b.created - a.created);
@@ -642,6 +645,7 @@ RENDER.records = () => {
   const chips = [];
   if (rf.month) chips.push(['month', monthName(rf.month)]);
   if (rf.cat) chips.push(['cat', catOf(rf.cat).name]);
+  if (rf.sub !== undefined) chips.push(['sub', (catOf(rf.cat).subs.find(z => z.id === rf.sub) || {}).name || 'Senza sottocategoria']);
   if (rf.account) chips.push(['account', accOf(rf.account).name]);
   $('r-chips').innerHTML = chips.map(([k, l]) => `<button class="on" data-k="${k}">${esc(l)} ✕</button>`).join('');
 
@@ -661,7 +665,7 @@ RENDER.records = () => {
   $('r-list').innerHTML = html || '<div class="empty">Nessun risultato.</div>';
 };
 $('r-q').oninput = () => { rf.q = $('r-q').value; RENDER.records(); };
-$('r-chips').onclick = e => { const b = e.target.closest('[data-k]'); if (b) { delete rf[b.dataset.k]; RENDER.records(); } };
+$('r-chips').onclick = e => { const b = e.target.closest('[data-k]'); if (b) { delete rf[b.dataset.k]; if (b.dataset.k === 'cat') delete rf.sub; RENDER.records(); } };
 
 // ---------- Editor registrazione ----------
 function openEditor(r) {

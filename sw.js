@@ -1,4 +1,4 @@
-const CACHE = 'spese-offline-v13';
+const CACHE = 'spese-offline-v14';
 const FILES = ['./', './index.html', './manifest.webmanifest', './icon-180.png', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
