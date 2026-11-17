@@ -68,7 +68,8 @@ input.search{color:var(--text)}
 .rec .end{text-align:right;white-space:nowrap}
 .rec .end b{display:block;font-weight:500}
 .rec .end span{color:var(--muted);font-size:14px}
-.day{color:var(--muted);font-size:13px;margin:18px 4px 4px;text-transform:uppercase;letter-spacing:.04em}
+.day{display:flex;justify-content:space-between;align-items:baseline;color:var(--muted);font-size:13px;margin:18px 4px 4px;text-transform:uppercase;letter-spacing:.04em}
+.day .neg{font-weight:600;letter-spacing:0}
 .group{background:var(--card);border-radius:16px;padding:2px 14px}
 .empty{color:var(--muted);text-align:center;padding:24px 0}
 .donut-wrap{position:relative;width:min(280px,80vw);margin:0 auto}
@@ -652,12 +653,15 @@ RENDER.records = () => {
   const out = sum(list.filter(r => r.type === 'expense')), inn = sum(list.filter(r => r.type === 'income'));
   $('r-sum').innerHTML = `${list.length} registrazioni · <span class="neg">${neg(out)}</span>${inn ? ` · <span class="pos">+${eur(inn)}</span>` : ''}`;
 
+  // Somma delle spese di ogni giorno (sulle registrazioni visibili con i filtri attivi)
+  const dayOut = {};
+  list.forEach(r => { if (r.type === 'expense') dayOut[r.date] = (dayOut[r.date] || 0) + r.amount; });
   let html = '', last = null;
   for (const r of list) {
     if (r.date !== last) {
       if (last) html += '</div>';
       last = r.date;
-      html += `<div class="day">${esc(shortDate(r.date))} ${r.date.slice(0, 4) !== String(new Date().getFullYear()) ? r.date.slice(0, 4) : ''}</div><div class="group">`;
+      html += `<div class="day"><span>${esc(shortDate(r.date))} ${r.date.slice(0, 4) !== String(new Date().getFullYear()) ? r.date.slice(0, 4) : ''}</span>${dayOut[r.date] ? `<span class="neg">${neg(dayOut[r.date])}</span>` : ''}</div><div class="group">`;
     }
     html += recRow(r, r.time);
   }
